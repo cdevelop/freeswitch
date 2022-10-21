@@ -2380,8 +2380,9 @@ static char *load_cache_data(http_file_context_t *context, const char *url)
 	const char *ext = NULL;
 	char *dext = NULL, *p;
 	char digest[SWITCH_MD5_DIGEST_STRING_SIZE] = { 0 };
-	char meta_buffer[1024] = "";
+	char *meta_buffer = NULL;
 	int fd;
+	long bytes;
 
 	switch_md5_string(digest, (void *) url, strlen(url));
 
@@ -2405,24 +2406,33 @@ static char *load_cache_data(http_file_context_t *context, const char *url)
 	context->meta_file = switch_core_sprintf(context->pool, "%s%s%s.meta", globals.cache_path, SWITCH_PATH_SEPARATOR, digest);
 
 	if (switch_file_exists(context->meta_file, context->pool) == SWITCH_STATUS_SUCCESS && ((fd = open(context->meta_file, O_RDONLY, 0)) > -1)) {
-		if (read(fd, meta_buffer, sizeof(meta_buffer)) > 0) {
-			char *p;
+		bytes = filelength(fd);
 
-			if ((p = strchr(meta_buffer, ':'))) {
-				*p++ = '\0';
-				if (context->expires != 1) {
-					context->expires = (time_t) atol(meta_buffer);
+		#ifndef CURL_MAX_INPUT_LENGTH
+		#define CURL_MAX_INPUT_LENGTH 10000000
+		#endif
+
+		if (bytes < CURL_MAX_INPUT_LENGTH && bytes > 0) {
+			meta_buffer = malloc(bytes);
+			if ((bytes = read(fd, meta_buffer, bytes)) > 0) {
+				char *p;
+
+				if ((p = strchr(meta_buffer, ':'))) {
+					*p++ = '\0';
+					if (context->expires != 1) {
+						context->expires = (time_t) atol(meta_buffer);
+					}
+					context->metadata = switch_core_strdup(context->pool, p);
 				}
-				context->metadata = switch_core_strdup(context->pool, p);
-			}
 
-			if ((p = strrchr(context->metadata, ':'))) {
-				p++;
-				if (!zstr(p)) {
-					ext = p;
+				if ((p = strrchr(context->metadata, ':'))) {
+					p++;
+					if (!zstr(p)) {
+						ext = p;
+					}
 				}
 			}
-
+			free(meta_buffer);
 		}
 		close(fd);
 	}
@@ -2698,7 +2708,6 @@ static switch_status_t write_meta_file(http_file_context_t *context, const char 
 {
 	int fd;
 	switch_status_t status = SWITCH_STATUS_SUCCESS;
-	char write_data[1024];
 
 	if ((fd = open(context->meta_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR)) < 0) {
 		return SWITCH_STATUS_FALSE;
@@ -2746,13 +2755,18 @@ static switch_status_t write_meta_file(http_file_context_t *context, const char 
 			}
 		}
 
-		switch_snprintf(write_data, sizeof(write_data),
+		char *write_data = switch_mprintf(
 						"%" TIME_T_FMT ":%s",
 						switch_epoch_time_now(NULL) + ttl,
 						data);
 
-
-		status = write(fd, write_data, (int)strlen(write_data) + 1) > 0 ? SWITCH_STATUS_SUCCESS : SWITCH_STATUS_FALSE;
+        if (write_data) {
+			status =
+				write(fd, write_data, (int)strlen(write_data) + 1) > 0 ? SWITCH_STATUS_SUCCESS : SWITCH_STATUS_FALSE;
+			free(write_data);
+		} else {
+			status = SWITCH_STATUS_FALSE;
+		}
 	}
 
 	close(fd);
