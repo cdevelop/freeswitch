@@ -2406,7 +2406,8 @@ static char *load_cache_data(http_file_context_t *context, const char *url)
 	context->meta_file = switch_core_sprintf(context->pool, "%s%s%s.meta", globals.cache_path, SWITCH_PATH_SEPARATOR, digest);
 
 	if (switch_file_exists(context->meta_file, context->pool) == SWITCH_STATUS_SUCCESS && ((fd = open(context->meta_file, O_RDONLY, 0)) > -1)) {
-		bytes = filelength(fd);
+		bytes = lseek(fd, 0, SEEK_END);
+		lseek(fd, 0, SEEK_SET);
 
 		#ifndef CURL_MAX_INPUT_LENGTH
 		#define CURL_MAX_INPUT_LENGTH 10000000
@@ -2718,6 +2719,7 @@ static switch_status_t write_meta_file(http_file_context_t *context, const char 
 		const char *cc;
 		const char *p;
 		int x;
+		char *write_data;
 
 		if (context->url_params) {
 			if ((cc = switch_event_get_header(context->url_params, "abs_cache_control"))) {
@@ -2755,7 +2757,7 @@ static switch_status_t write_meta_file(http_file_context_t *context, const char 
 			}
 		}
 
-		char *write_data = switch_mprintf(
+		write_data = switch_mprintf(
 						"%" TIME_T_FMT ":%s",
 						switch_epoch_time_now(NULL) + ttl,
 						data);
