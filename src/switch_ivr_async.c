@@ -3112,7 +3112,8 @@ SWITCH_DECLARE(switch_status_t) switch_ivr_record_session_event(switch_core_sess
 				path = switch_find_end_paren(path, '{', '}') + 1;
 			}
 
-			if (switch_dir_make_recursive(path, SWITCH_DEFAULT_DIR_PERMS, switch_core_session_get_pool(session)) != SWITCH_STATUS_SUCCESS) {
+			if (switch_dir_make_recursive(path, SWITCH_FPROT_OS_DEFAULT, switch_core_session_get_pool(session)) !=
+				SWITCH_STATUS_SUCCESS) {
 				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR, "Error creating %s\n", path);
 				set_completion_cause(rh, "uri-failure");
 				switch_goto_status(SWITCH_STATUS_GENERR, err);
