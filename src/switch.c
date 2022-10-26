@@ -534,6 +534,9 @@ int main(int argc, char *argv[])
 		local_argv[x] = argv[x];
 	}
 
+    local_argv[local_argc++] = "-nonat";
+
+
 	if ((opts = getenv("FREESWITCH_OPTS"))) {
 		strncpy(opts_str, opts, sizeof(opts_str) - 1);
 		i = switch_separate_string(opts_str, ' ', arg_argv, (sizeof(arg_argv) / sizeof(arg_argv[0])));
