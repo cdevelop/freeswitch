@@ -1182,6 +1182,7 @@ SWITCH_DECLARE(switch_status_t) switch_md5(unsigned char digest[SWITCH_MD5_DIGES
 
 	return SWITCH_STATUS_SUCCESS;
 #else
+    #error MD5 NOTIMPL
 	return SWITCH_STATUS_NOTIMPL;
 #endif
 }
