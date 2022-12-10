@@ -296,8 +296,8 @@ static switch_status_t process_node(const switch_log_node_t *node, switch_log_le
 				const char *b = node->data;
 				const char *e;
 				do  {
-					e = strchr(b, '\n');
 					size_t l = 0;
+					e = strchr(b, '\n');
 					if (e) {
 						l = e - b;
 					} else {
