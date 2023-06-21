@@ -472,7 +472,7 @@ switch_status_t sofia_on_hangup(switch_core_session_t *session)
 		switch_core_hash_delete_locked(tech_pvt->profile->chat_hash, tech_pvt->hash_key, tech_pvt->profile->flag_mutex);
 	}
 
-	if (session && tech_pvt->profile->pres_type) {
+	if (tech_pvt->profile->pres_type) {
 		char *sql = switch_mprintf("delete from sip_dialogs where uuid='%q'", switch_core_session_get_uuid(session));
 		switch_assert(sql);
 		sofia_glue_execute_sql_now(tech_pvt->profile, &sql, SWITCH_TRUE);
@@ -2065,7 +2065,8 @@ static switch_status_t sofia_receive_message(switch_core_session_t *session, swi
 
 							nua_info(tech_pvt->nh, SIPTAG_CONTENT_TYPE_STR("message/sipfrag"),
 									 TAG_IF(!zstr(tech_pvt->user_via), SIPTAG_VIA_STR(tech_pvt->user_via)), SIPTAG_PAYLOAD_STR(message), TAG_END());
-						} else if (update_allowed && ua && (switch_stristr("polycom", ua) ||
+						} else if (update_allowed && ua && (switch_channel_var_true(tech_pvt->channel, "update_ignore_ua") ||
+									  switch_stristr("polycom", ua) ||
 									  (switch_stristr("aastra", ua) && !switch_stristr("Intelligate", ua)) ||
 									  (switch_stristr("cisco/spa50", ua) ||
 									  switch_stristr("cisco/spa525", ua)) ||
@@ -2204,11 +2205,7 @@ static switch_status_t sofia_receive_message(switch_core_session_t *session, swi
 													argv[i], (double)((double)(MAX_REDIR + 1 - i))/1000);
 								}
 							} else {
-								if (i == argc - 1) {
-									switch_snprintf(newdest + strlen(newdest), len - strlen(newdest), "\"unknown\" <%s>", argv[i]);
-								} else {
-									switch_snprintf(newdest + strlen(newdest), len - strlen(newdest), "\"unknown\" <%s>,", argv[i]);
-								}
+								switch_snprintf(newdest + strlen(newdest), len - strlen(newdest), "\"unknown\" <%s>", argv[i]);
 							}
 						} else {
 							if (i == argc - 1) {
@@ -2596,8 +2593,6 @@ static switch_status_t sofia_receive_message(switch_core_session_t *session, swi
 							}
 						}
 					}
-
-					switch_channel_check_zrtp(tech_pvt->channel);
 
 					if ((status = switch_core_media_choose_port(tech_pvt->session, SWITCH_MEDIA_TYPE_AUDIO, 0)) != SWITCH_STATUS_SUCCESS) {
 						switch_channel_hangup(channel, SWITCH_CAUSE_DESTINATION_OUT_OF_ORDER);
@@ -3066,7 +3061,6 @@ static switch_status_t cmd_status(char **argv, int argc, switch_stream_handle_t 
 					stream->write_function(stream, "NOMEDIA          \t%s\n", sofia_test_flag(profile, TFLAG_INB_NOMEDIA) ? "true" : "false");
 					stream->write_function(stream, "LATE-NEG         \t%s\n", sofia_test_flag(profile, TFLAG_LATE_NEGOTIATION) ? "true" : "false");
 					stream->write_function(stream, "PROXY-MEDIA      \t%s\n", sofia_test_flag(profile, TFLAG_PROXY_MEDIA) ? "true" : "false");
-					stream->write_function(stream, "ZRTP-PASSTHRU    \t%s\n", sofia_test_flag(profile, TFLAG_ZRTP_PASSTHRU) ? "true" : "false");
 					stream->write_function(stream, "AGGRESSIVENAT    \t%s\n",
 										   sofia_test_pflag(profile, PFLAG_AGGRESSIVE_NAT_DETECTION) ? "true" : "false");
 					if (profile->user_agent_filter) {
@@ -3369,7 +3363,6 @@ static switch_status_t cmd_xml_status(char **argv, int argc, switch_stream_handl
 					stream->write_function(stream, "    <nomedia>%s</nomedia>\n", sofia_test_flag(profile, TFLAG_INB_NOMEDIA) ? "true" : "false");
 					stream->write_function(stream, "    <late-neg>%s</late-neg>\n", sofia_test_flag(profile, TFLAG_LATE_NEGOTIATION) ? "true" : "false");
 					stream->write_function(stream, "    <proxy-media>%s</proxy-media>\n", sofia_test_flag(profile, TFLAG_PROXY_MEDIA) ? "true" : "false");
-					stream->write_function(stream, "    <zrtp-passthru>%s</zrtp-passthru>\n", sofia_test_flag(profile, TFLAG_ZRTP_PASSTHRU) ? "true" : "false");
 					stream->write_function(stream, "    <aggressive-nat>%s</aggressive-nat>\n",
 										   sofia_test_pflag(profile, PFLAG_AGGRESSIVE_NAT_DETECTION) ? "true" : "false");
 					if (profile->user_agent_filter) {
@@ -4316,6 +4309,8 @@ SWITCH_STANDARD_API(sofia_presence_data_function)
 		user = argv[1];
 	}
 
+	if (!user) goto end;
+
 	if ((domain = strchr(user, '@'))) {
 		*domain++ = '\0';
 		if ((concat = strchr(domain, '/'))) {
@@ -4331,8 +4326,6 @@ SWITCH_STANDARD_API(sofia_presence_data_function)
 		dup_domain = switch_core_get_domain(SWITCH_TRUE);
 		domain = dup_domain;
 	}
-
-	if (!user) goto end;
 
 	if (zstr(profile_name) || strcmp(profile_name, "*") || zstr(domain)) {
 		if (!zstr(profile_name)) {
@@ -4671,7 +4664,7 @@ static switch_status_t sofia_manage(char *relative_oid, switch_management_action
 	return SWITCH_STATUS_SUCCESS;
 }
 
-static int protect_dest_uri(switch_caller_profile_t *cp)
+int protect_dest_uri(switch_caller_profile_t *cp)
 {
 	char *p = cp->destination_number, *o = p;
 	char *q = NULL, *e = NULL, *qenc = NULL;
@@ -5183,17 +5176,6 @@ static switch_call_cause_t sofia_outgoing_channel(switch_core_session_t *session
 				sofia_set_flag(ctech_pvt, TFLAG_ENABLE_SOA);
 			} else {
 				sofia_clear_flag(ctech_pvt, TFLAG_ENABLE_SOA);
-			}
-
-			if (switch_channel_test_flag(o_channel, CF_ZRTP_PASSTHRU_REQ) && switch_channel_test_flag(o_channel, CF_ZRTP_HASH)) {
-				const char *x = NULL;
-				switch_core_media_pass_zrtp_hash2(session, nsession);
-				switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "[zrtp_passthru] Setting a-leg inherit_codec=true\n");
-				switch_channel_set_variable(o_channel, "inherit_codec", "true");
-				if ((x = switch_channel_get_variable(o_channel, "ep_codec_string"))) {
-					switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_DEBUG, "[zrtp_passthru] Setting b-leg absolute_codec_string='%s'\n", x);
-					switch_channel_set_variable(nchannel, "absolute_codec_string", x);
-				}
 			}
 
 			/* SNARK: lets copy this across so we can see if we're the other leg of 3PCC + bypass_media... */
