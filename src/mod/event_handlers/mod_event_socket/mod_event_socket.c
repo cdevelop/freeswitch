@@ -549,7 +549,7 @@ SWITCH_STANDARD_APP(socket_function)
 			switch_channel_set_state(channel, CS_EXECUTE);
 		}
 
-		return;
+		//return;
 	} else {
 		listener_run(NULL, (void *) listener);
 	}
@@ -2835,6 +2835,8 @@ static void *SWITCH_THREAD_FUNC listener_run(switch_thread_t *thread, void *obj)
 		switch_core_hash_destroy(&listener->allowed_api_hash);
 	}
 
+	listener->finished = 1;
+
 	if (listener->session) {
 		if (locked) {
 			switch_channel_clear_flag(switch_core_session_get_channel(listener->session), CF_CONTROLLED);
@@ -2852,7 +2854,6 @@ static void *SWITCH_THREAD_FUNC listener_run(switch_thread_t *thread, void *obj)
 	prefs.threads--;
 	switch_mutex_unlock(globals.listener_mutex);
 
-	listener->finished = 1;
 
 	return NULL;
 }
